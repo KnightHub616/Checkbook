@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Checkbook</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      .tab {
+        overflow: hidden;
+        border: 1px solid #ccc;
+        background-color: #f1f1f1;
+      }
+      .tab button {
+        background-color: inherit;
+        float: left;
+        border: none;
+        outline: none;
+        cursor: pointer;
+        padding: 14px 16px;
+        transition: 0.3s;
+      }
+      .tab button:hover {
+        background-color: #ddd;
+      }
+      .tab button.active {
+        background-color: #ccc;
+      }
+      .tabcontent {
+        display: none;
+        padding: 6px 12px;
+        border: 1px solid #ccc;
+        border-top: none;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+      .input-area {
+        margin-top: 20px;
+      }
+      .input-area input {
+        margin-right: 10px;
+        padding: 5px;
+      }
+      .input-area button {
+        padding: 5px 10px;
+      }
+      .account-management {
+        margin-top: auto;
+        padding: 10px;
+        border: 1px solid #ccc;
+        width: 100%;
+      }
+      .tablinks.delete {
+        background-color: red;
+      }
+      .table-controls {
+        margin-top: 10px;
+        margin-bottom: 10px;
+      }
+      .add-account-button {
+        padding: 14px 16px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      #main-content {
+        flex-grow: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>My Checkbook</h1>
+
+    <div id="main-content">
+      <div class="tab" id="accountTabs">
+        <button class="tablinks" onclick="openAccount(event, 'Checking')">
+          Checking
+        </button>
+        <button class="add-account-button" onclick="createNewAccount()">
+          +
+        </button>
+      </div>
+
+      <div id="Checking" class="tabcontent">
+        <h2>Checking Account</h2>
+        <div class="input-area">
+          <input type="date" id="checking-date" required />
+          <input
+            type="text"
+            id="checking-description"
+            placeholder="Description"
+            required
+          />
+          <select id="checking-type">
+            <option value="credit">Credit</option>
+            <option value="debit">Debit</option>
+          </select>
+          <input
+            type="number"
+            id="checking-amount"
+            placeholder="Amount"
+            required
+          />
+          <button onclick="addTransaction('Checking')">Add Transaction</button>
+        </div>
+        <div class="table-controls">
+          <select id="checking-sort" onchange="sortTransactions('Checking')">
+            <option value="newest">Sort by Newest</option>
+            <option value="oldest">Sort by Oldest</option>
+          </select>
+          <input
+            type="text"
+            id="checking-search"
+            placeholder="Search..."
+            oninput="searchTransactions('Checking')"
+          />
+        </div>
+        <table id="checking-table">
+          <tr>
+            <th>Date</th>
+            <th>Description</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Balance</th>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <!-- Account Management -->
+    <div class="account-management">
+      <h3>Manage Accounts</h3>
+      <select id="existing-accounts">
+        <!-- Options will be added here -->
+      </select>
+      <input
+        type="text"
+        id="rename-account-name"
+        placeholder="Rename Account"
+      />
+      <button onclick="renameAccount()">Rename Account</button>
+      <button onclick="deleteAccount()">Delete Account</button>
+    </div>
+    <script>
+      let accounts = ["Checking"];
+      let transactionData = { Checking: [] };
+      let archivedTransactions = { Checking: [] };
+
+      function loadTransactions() {
+        accounts.forEach((account) => {
+          const storedTransactions = localStorage.getItem(
+            `${account}-transactions`
+          );
+          transactionData[account] = storedTransactions
+            ? JSON.parse(storedTransactions)
+            : [];
+        });
+        accounts.forEach((account) => {
+          const storedArchivedTransactions = localStorage.getItem(
+            `${account}-archived-transactions`
+          );
+          archivedTransactions[account] = storedArchivedTransactions
+            ? JSON.parse(storedArchivedTransactions)
+            : [];
+        });
+      }
+
+      function saveTransactions() {
+        accounts.forEach((account) => {
+          localStorage.setItem(
+            `${account}-transactions`,
+            JSON.stringify(transactionData[account])
+          );
+        });
+        accounts.forEach((account) => {
+          localStorage.setItem(
+            `${account}-archived-transactions`,
+            JSON.stringify(archivedTransactions[account])
+          );
+        });
+      }
+
+      function populateExistingAccounts() {
+        const select = document.getElementById("existing-accounts");
+        if (!select) return;
+        select.innerHTML = "";
+        accounts.forEach((account) => {
+          const option = document.createElement("option");
+          option.value = account;
+          option.textContent = account;
+          select.appendChild(option);
+        });
+      }
+
+      function updateBalance(accountName) {
+        const table = document.getElementById(
+          `${accountName.toLowerCase()}-table`
+        );
+        const rows = Array.from(table.rows).slice(1);
+        let balance = 0;
+        const transactions = transactionData[accountName];
+        transactions.forEach((transaction, index) => {
+          const type = transaction.type;
+          const amount = parseFloat(transaction.amount);
+          balance = type === "credit" ? balance + amount : balance - amount;
+          const row = rows[index];
+          if (row) {
+            row.cells[4].textContent = balance.toFixed(2);
+          }
+        });
+      }
+
+      function openAccount(evt, accountName) {
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tabcontent");
+        for (i = 0; i < tabcontent.length; i++) {
+          tabcontent[i].style.display = "none";
+        }
+        tablinks = document.getElementsByClassName("tablinks");
+        for (i = 0; i < tablinks.length; i++) {
+          tablinks[i].className = tablinks[i].className.replace(" active", "");
+        }
+        document.getElementById(accountName).style.display = "block";
+        evt.currentTarget.className += " active";
+        setDefaultDate(accountName);
+      }
+
+      function addTransaction(accountName) {
+        const date = document.getElementById(
+          `${accountName.toLowerCase()}-date`
+        ).value;
+        const description = document.getElementById(
+          `${accountName.toLowerCase()}-description`
+        ).value;
+        const type = document.getElementById(
+          `${accountName.toLowerCase()}-type`
+        ).value;
+        const amount = parseFloat(
+          document.getElementById(`${accountName.toLowerCase()}-amount`).value
+        );
+
+        if (!date || !description || isNaN(amount)) {
+          alert("Please fill in all fields");
+          return;
+        }
+
+        const table = document.getElementById(
+          `${accountName.toLowerCase()}-table`
+        );
+        const newRow = table.insertRow(-1);
+
+        const dateCell = newRow.insertCell(0);
+        const descriptionCell = newRow.insertCell(1);
+        const typeCell = newRow.insertCell(2);
+        const amountCell = newRow.insertCell(3);
+        const balanceCell = newRow.insertCell(4);
+
+        dateCell.textContent = date;
+        descriptionCell.textContent = description;
+        typeCell.textContent = type;
+        amountCell.textContent = amount.toFixed(2);
+
+        transactionData[accountName].push({ date, description, type, amount });
+        sortTransactions(accountName);
+        searchTransactions(accountName);
+        updateBalance(accountName);
+
+        document.getElementById(`${accountName.toLowerCase()}-date`).value = "";
+        document.getElementById(
+          `${accountName.toLowerCase()}-description`
+        ).value = "";
+        document.getElementById(`${accountName.toLowerCase()}-amount`).value =
+          "";
+
+        saveTransactions();
+        setDefaultDate(accountName);
+      }
+
+      function sortTransactions(accountName) {
+        const table = document.getElementById(
+          `${accountName.toLowerCase()}-table`
+        );
+        const rows = Array.from(table.rows).slice(1);
+        const sortSelect = document.getElementById(
+          `${accountName.toLowerCase()}-sort`
+        );
+        const sortOrder = sortSelect.value;
+
+        rows.sort((a, b) => {
+          const dateA = new Date(a.cells[0].textContent);
+          const dateB = new Date(b.cells[0].textContent);
+          return sortOrder === "newest" ? dateB - dateA : dateA - dateB;
+        });
+
+        while (table.rows.length > 1) {
+          table.deleteRow(1);
+        }
+
+        rows.forEach((row) => table.appendChild(row));
+        updateBalance(accountName);
+      }
+
+      function searchTransactions(accountName) {
+        const table = document.getElementById(
+          `${accountName.toLowerCase()}-table`
+        );
+        const rows = Array.from(table.rows).slice(1);
+        const searchInput = document.getElementById(
+          `${accountName.toLowerCase()}-search`
+        );
+        const searchTerm = searchInput.value.toLowerCase();
+
+        rows.forEach((row) => {
+          const date = row.cells[0].textContent.toLowerCase();
+          const description = row.cells[1].textContent.toLowerCase();
+          const type = row.cells[2].textContent.toLowerCase();
+          const amount = row.cells[3].textContent.toLowerCase();
+
+          if (
+            date.includes(searchTerm) ||
+            description.includes(searchTerm) ||
+            type.includes(searchTerm) ||
+            amount.includes(searchTerm)
+          ) {
+            row.style.display = "";
+          } else {
+            row.style.display = "none";
+          }
+        });
+      }
+
+      function createNewAccount() {
+        const newAccountName = prompt("Enter new account name:");
+        if (!newAccountName || accounts.includes(newAccountName)) {
+          alert("Please enter a unique account name.");
+          return;
+        }
+        accounts.push(newAccountName);
+        transactionData[newAccountName] = [];
+        archivedTransactions[newAccountName] = [];
+
+        const tabButton = document.createElement("button");
+        tabButton.className = "tablinks";
+        tabButton.textContent = newAccountName;
+        tabButton.onclick = (event) => openAccount(event, newAccountName);
+        tabButton.setAttribute("data-account-name", newAccountName);
+        document
+          .getElementById("accountTabs")
+          .insertBefore(
+            tabButton,
+            document.querySelector(".add-account-button")
+          );
+
+        const tabContent = document.createElement("div");
+        tabContent.id = newAccountName;
+        tabContent.className = "tabcontent";
+        tabContent.innerHTML = `
+      <h2>${newAccountName} Account</h2>
+      <div class="input-area">
+        <input type="date" id="${newAccountName.toLowerCase()}-date" required />
+        <input type="text" id="${newAccountName.toLowerCase()}-description" placeholder="Description" required />
+        <select id="${newAccountName.toLowerCase()}-type">
+          <option value="credit">Credit</option>
+          <option value="debit">Debit</option>
+        </select>
+        <input type="number" id="${newAccountName.toLowerCase()}-amount" placeholder="Amount" required />
+        <button onclick="addTransaction('${newAccountName}')">Add Transaction</button>
+      </div>
+      <div class="table-controls">
+        <select id="${newAccountName.toLowerCase()}-sort" onchange="sortTransactions('${newAccountName}')">
+          <option value="newest">Sort by Newest</option>
+          <option value="oldest">Sort by Oldest</option>
+        </select>
+        <input type="text" id="${newAccountName.toLowerCase()}-search" placeholder="Search..." oninput="searchTransactions('${newAccountName}')" />
+        <button class="archive-button" onclick="archiveTransactions('${newAccountName}')">Archive Transactions</button>
+      </div>
+      <table id="${newAccountName.toLowerCase()}-table">
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Type</th>
+          <th>Amount</th>
+          <th>Balance</th>
+        </tr>
+      </table>
+    `;
+        document.getElementById("main-content").appendChild(tabContent);
+        saveTransactions();
+        setDefaultDate(newAccountName);
+        populateExistingAccounts();
+      }
+
+      function renameAccount() {
+        const oldAccountName =
+          document.getElementById("existing-accounts").value;
+        const newAccountName = document.getElementById(
+          "rename-account-name"
+        ).value;
+
+        if (!newAccountName || accounts.includes(newAccountName)) {
+          alert("Please enter a unique account name.");
+          return;
+        }
+
+        if (accounts.includes(oldAccountName)) {
+          const index = accounts.indexOf(oldAccountName);
+          accounts[index] = newAccountName;
+
+          const tabButton = document.querySelector(
+            `#accountTabs button[data-account-name="${oldAccountName}"]`
+          );
+          if (tabButton) {
+            tabButton.textContent = newAccountName;
+            tabButton.setAttribute("data-account-name", newAccountName);
+            tabButton.setAttribute(
+              "onclick",
+              `openAccount(event, '${newAccountName}')`
+            );
+          }
+
+          const tabContent = document.getElementById(oldAccountName);
+          if (tabContent) {
+            tabContent.id = newAccountName;
+
+            const h2 = tabContent.querySelector("h2");
+            if (h2) {
+              h2.textContent = `${newAccountName} Account`;
+            }
+
+            const inputs = tabContent.querySelectorAll("input, select");
+            inputs.forEach((input) => {
+              input.id = input.id.replace(
+                oldAccountName.toLowerCase(),
+                newAccountName.toLowerCase()
+              );
+            });
+
+            const table = tabContent.querySelector("table");
+            if (table) {
+              table.id = table.id.replace(
+                oldAccountName.toLowerCase(),
+                newAccountName.toLowerCase()
+              );
+            }
+
+            const sort = tabContent.querySelector(
+              `#${newAccountName.toLowerCase()}-sort`
+            );
+            if (sort) {
+              sort.setAttribute(
+                "onchange",
+                `sortTransactions('${newAccountName}')`
+              );
+            }
+            const search = tabContent.querySelector(
+              `#${newAccountName.toLowerCase()}-search`
+            );
+            if (search) {
+              search.setAttribute(
+                "oninput",
+                `searchTransactions('${newAccountName}')`
+              );
+            }
+            const archiveButton = tabContent.querySelector(".archive-button");
+            if (archiveButton) {
+              archiveButton.setAttribute(
+                "onclick",
+                `archiveTransactions('${newAccountName}')`
+              );
+            }
+
+            const button = tabContent.querySelector("button");
+            if (button) {
+              button.setAttribute(
+                "onclick",
+                `addTransaction('${newAccountName}')`
+              );
+            }
+          }
+
+          const storedTransactions = localStorage.getItem(
+            `${oldAccountName}-transactions`
+          );
+          localStorage.setItem(
+            `${newAccountName}-transactions`,
+            storedTransactions
+          );
+          localStorage.removeItem(`${oldAccountName}-transactions`);
+
+          const storedArchivedTransactions = localStorage.getItem(
+            `${oldAccountName}-archived-transactions`
+          );
+          localStorage.setItem(
+            `${newAccountName}-archived-transactions`,
+            storedArchivedTransactions
+          );
+          localStorage.removeItem(`${oldAccountName}-archived-transactions`);
+
+          transactionData[newAccountName] = transactionData[oldAccountName];
+          delete transactionData[oldAccountName];
+
+          archivedTransactions[newAccountName] =
+            archivedTransactions[oldAccountName];
+          delete archivedTransactions[oldAccountName];
+
+          populateExistingAccounts();
+        }
+      }
+
+      function deleteAccount() {
+        const accountName = document.getElementById("existing-accounts").value;
+        if (accountName === "Checking") {
+          alert("Cannot delete the default Checking account.");
+          return;
+        }
+        if (accounts.includes(accountName)) {
+          if (confirm(`Are you sure you want to delete ${accountName}?`)) {
+            const index = accounts.indexOf(accountName);
+            accounts.splice(index, 1);
+
+            const tabButton = document.querySelector(
+              `#accountTabs button[data-account-name="${accountName}"]`
+            );
+            if (tabButton) {
+              tabButton.remove();
+            }
+
+            const tabContent = document.getElementById(accountName);
+            if (tabContent) {
+              tabContent.remove();
+            }
+
+            localStorage.removeItem(`${accountName}-transactions`);
+            localStorage.removeItem(`${accountName}-archived-transactions`);
+
+            delete transactionData[accountName];
+            delete archivedTransactions[accountName];
+
+            populateExistingAccounts();
+          }
+        }
+      }
+
+      function archiveTransactions(accountName) {
+        if (
+          confirm(
+            `Are you sure you want to archive all transactions for ${accountName}?`
+          )
+        ) {
+          archivedTransactions[accountName].push(
+            ...transactionData[accountName]
+          );
+          transactionData[accountName] = [];
+          saveTransactions();
+
+          const table = document.getElementById(
+            `${accountName.toLowerCase()}-table`
+          );
+          while (table.rows.length > 1) {
+            table.deleteRow(1);
+          }
+          updateBalance(accountName);
+          alert(`All transactions for ${accountName} have been archived.`);
+        }
+      }
+      // ... existing code
+
+      function setDefaultDate(accountName) {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const day = String(today.getDate()).padStart(2, "0");
+        const formattedDate = `${year}-${month}-${day}`;
+        const dateInput = document.getElementById(
+          `${accountName.toLowerCase()}-date`
+        );
+        if (dateInput) {
+          dateInput.value = formattedDate;
+        }
+      }
+      function loadTransactions() {
+        accounts.forEach((account) => {
+          const storedTransactions = localStorage.getItem(
+            `${account}-transactions`
+          );
+          transactionData[account] = storedTransactions
+            ? JSON.parse(storedTransactions)
+            : [];
+        });
+      }
+
+      function saveTransactions() {
+        accounts.forEach((account) => {
+          localStorage.setItem(
+            `${account}-transactions`,
+            JSON.stringify(transactionData[account])
+          );
+        });
+      }
+      // --- Initialization ---
+      document.addEventListener("DOMContentLoaded", function () {
+        loadTransactions();
+        populateExistingAccounts();
+        const checkingTabButton = document.querySelector(
+          '#accountTabs button[onclick*="Checking"]'
+        );
+        if (checkingTabButton) {
+          checkingTabButton.classList.add("active");
+        }
+        const checkingTabContent = document.getElementById("Checking");
+        if (checkingTabContent) {
+          checkingTabContent.style.display = "block";
+          checkingTabContent.innerHTML += `
+        <div class="table-controls">
+          <button class="archive-button" onclick="archiveTransactions('Checking')">Archive Transactions</button>
+        </div>
+      `;
+        }
+
+        setDefaultDate("Checking");
+      });
+    </script>
+  </body>
+</html>
